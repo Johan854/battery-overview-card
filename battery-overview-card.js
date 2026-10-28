@@ -1,14 +1,46 @@
+{ // bloc isolé : aucune variable ne fuit vers les autres cartes
 /*
  * Battery Overview Card (FR)
  * Carte Home Assistant qui regroupe les niveaux de batterie de tes capteurs : tri du plus faible au plus fort, barres
  * colorées, alertes sous un seuil, appareils hors ligne signalés. Détection automatique possible. Style verre,
  * thème clair/sombre automatique, éditeur visuel, textes en français.
  */
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.1.0";
+
+/* === NUANCE COMMUNE v2 (cartes Johan854) ===
+ * Bloc identique dans toutes les cartes. Options : nuance, nuance_perso, intensite.
+ * nuance "theme" (par défaut) : suit la variable carte-nuance du thème Home Assistant ;
+ * si elle n'existe pas, la carte garde ses couleurs d'origine. Intensité : 0 = neutre, 1 = normal, 2 = très coloré. */
+const GV_NUANCES = [["braise", "Braise (rouge)", "#e0524f"], ["ocean", "Océan (bleu)", "#2f8fd8"], ["lagon", "Lagon (turquoise)", "#1fb5a8"], ["foret", "Forêt (vert)", "#3fae5a"], ["lavande", "Lavande (violet)", "#8a63d8"], ["framboise", "Framboise (rose)", "#e05597"], ["ambre", "Ambre (orange)", "#e8902c"], ["ardoise", "Ardoise (neutre)", "#7d8595"]];
+const GV_DEFAULTS = { nuance: "theme", intensite: 1 };
+const gvAccent = (c) => {
+  const p = c && c.nuance_perso;
+  if (c && c.nuance === "perso") {
+    if (Array.isArray(p) && p.length === 3) return "#" + p.map((v) => Math.max(0, Math.min(255, Math.round(+v || 0))).toString(16).padStart(2, "0")).join("");
+    if (typeof p === "string" && /^#?[0-9a-f]{6}$/i.test(p.trim())) return "#" + p.trim().replace("#", "");
+  }
+  const n = GV_NUANCES.find((x) => x[0] === (c && c.nuance));
+  return n ? n[2] : "var(--carte-nuance)";
+};
+/* Variables posées sur <ha-card> : --g-bg-x (fond dégradé teinté) et --acc-ui-x (couleur d'accent).
+ * Sans nuance (thème sans carte-nuance), elles sont invalides : chaque carte retombe alors sur ses couleurs d'origine. */
+const gvStyle = (c, dark) => {
+  const i = Number(c && c.intensite), ai = Number.isFinite(i) ? Math.max(0, Math.min(2, i)) : 1;
+  const m = (pct, base) => `color-mix(in srgb,var(--acc-ui) ${+(pct * ai).toFixed(1)}%,${base})`;
+  const bg = dark ? `linear-gradient(160deg,${m(5, "#1b1e32")} 0%,${m(11, "#1f1b2c")} 55%,${m(22, "#1c1620")} 100%)`
+    : `linear-gradient(160deg,${m(2, "#f8f9fd")} 0%,${m(5, "#eef1f8")} 55%,${m(11, "#f8f8fa")} 100%)`;
+  return `--acc-ui:${gvAccent(c)};--g-bg-x:${bg};--acc-ui-x:color-mix(in srgb,var(--acc-ui) ${dark ? "80%,#fff" : "82%,#000"})`;
+};
+const GV_FIELDS = [
+  { name: "nuance", selector: { select: { mode: "dropdown", options: [{ value: "theme", label: "Selon le thème (couleurs d'origine)" }, ...GV_NUANCES.map((n) => ({ value: n[0], label: n[1] })), { value: "perso", label: "Personnalisée" }] } } },
+  { name: "nuance_perso", selector: { color_rgb: {} } },
+  { name: "intensite", selector: { number: { min: 0, max: 2, step: 0.1, mode: "slider" } } }];
+const GV_LABELS = { nuance: "Nuance de couleur", nuance_perso: "Couleur personnalisée (nuance « Personnalisée »)", intensite: "Intensité de la nuance" };
+/* === FIN NUANCE COMMUNE === */
 
 const DEFAULTS = {
   title: "Batteries",
-  theme: "auto",
+  theme: "auto", nuance: "theme", intensite: 1,
   low_threshold: 20,
   critical_threshold: 10,
   sort: "level", // level | manual | name
@@ -109,9 +141,9 @@ class BatteryOverviewCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `<style>
       * { box-sizing:border-box; }
-      ha-card.dark { --bt-text:#f4f6fb; --bt-muted:#a9afc0; --bt-bg:linear-gradient(160deg,#1b1e32 0%,#241a2a 55%,#2d1519 100%); --bt-border:rgba(255,255,255,.14); --bt-shadow:0 .6em 2em rgba(0,0,0,.35);
+      ha-card.dark { --bt-text:#f4f6fb; --bt-muted:#a9afc0; --bt-bg:var(--g-bg-x,linear-gradient(160deg,#1b1e32 0%,#241a2a 55%,#2d1519 100%)); --bt-border:rgba(255,255,255,.14); --bt-shadow:0 .6em 2em rgba(0,0,0,.35);
         --bt-glass:rgba(255,255,255,.07); --bt-glass-b:rgba(255,255,255,.13); --bt-ok:#3ddc84; --bt-mid:#9be15d; --bt-low:#ffb86b; --bt-crit:#ff5a5f; --bt-track:rgba(255,255,255,.12); }
-      ha-card.light { --bt-text:#1c2030; --bt-muted:#5d6477; --bt-bg:linear-gradient(160deg,#f8f9fd 0%,#eef1f8 55%,#f8eff0 100%); --bt-border:rgba(20,24,40,.12); --bt-shadow:0 .4em 1.4em rgba(20,24,40,.12);
+      ha-card.light { --bt-text:#1c2030; --bt-muted:#5d6477; --bt-bg:var(--g-bg-x,linear-gradient(160deg,#f8f9fd 0%,#eef1f8 55%,#f8eff0 100%)); --bt-border:rgba(20,24,40,.12); --bt-shadow:0 .4em 1.4em rgba(20,24,40,.12);
         --bt-glass:rgba(255,255,255,.7); --bt-glass-b:rgba(20,24,40,.1); --bt-ok:#1a9d55; --bt-mid:#5a9d1a; --bt-low:#c77a14; --bt-crit:#d32f35; --bt-track:rgba(20,24,40,.1); }
       ha-card { container-type:inline-size; display:flex; flex-direction:column; gap:12px; padding:16px; color:var(--bt-text); border-radius:24px; border:1px solid var(--bt-border); background:var(--bt-bg); box-shadow:var(--bt-shadow); overflow:hidden; }
       ha-icon { --mdc-icon-size:1.35em; flex:none; }
@@ -133,7 +165,7 @@ class BatteryOverviewCard extends HTMLElement {
       .row.na { opacity:.6; } .row.na ha-icon, .row.na .vl { color:var(--bt-muted); } .row.na .vl { font-size:.78em; }
       .empty { text-align:center; color:var(--bt-muted); padding:1.2em; font-size:.9em; }
     </style>
-    <ha-card class="${dark ? "dark" : "light"}">
+    <ha-card class="${dark ? "dark" : "light"}" style="${gvStyle(this._config, dark)}">
       ${c.title ? `<div class="t">${esc(c.title)}</div>` : ""}${items.length ? sum : ""}
       ${rows.length ? `<div class="list glass">${list}</div>` : `<div class="empty">${items.length ? "Aucune batterie faible." : "Ajoute des capteurs ou active la détection automatique dans l'éditeur."}</div>`}
     </ha-card>`;
@@ -142,11 +174,11 @@ class BatteryOverviewCard extends HTMLElement {
 }
 
 /* ---------- Éditeur visuel ---------- */
-const LABELS = { title: "Titre", theme: "Thème", low_threshold: "Seuil « faible » (%)", critical_threshold: "Seuil « critique » (%)", sort: "Tri", only_low: "Afficher seulement les batteries faibles",
+const LABELS = { ...GV_LABELS, title: "Titre", theme: "Thème", low_threshold: "Seuil « faible » (%)", critical_threshold: "Seuil « critique » (%)", sort: "Tri", only_low: "Afficher seulement les batteries faibles",
   auto_discover: "Détecter automatiquement les capteurs de batterie", exclude: "Mots à exclure (séparés par des virgules)", entity: "Capteur de batterie", name: "Nom (facultatif)" };
 const MAIN = [
   { type: "grid", name: "", schema: [{ name: "title", selector: { text: {} } },
-    { name: "theme", selector: { select: { mode: "dropdown", options: [{ value: "auto", label: "Automatique" }, { value: "light", label: "Clair" }, { value: "dark", label: "Sombre" }] } } }] },
+    { name: "theme", selector: { select: { mode: "dropdown", options: [{ value: "auto", label: "Automatique" }, { value: "light", label: "Clair" }, { value: "dark", label: "Sombre" }] } } }, ...GV_FIELDS] },
   { type: "grid", name: "", schema: [{ name: "low_threshold", selector: { number: { min: 1, max: 100, mode: "box" } } }, { name: "critical_threshold", selector: { number: { min: 1, max: 100, mode: "box" } } }] },
   { name: "sort", selector: { select: { mode: "dropdown", options: [{ value: "level", label: "Du plus faible au plus fort" }, { value: "name", label: "Par nom" }, { value: "manual", label: "Ordre de la liste" }] } } },
   { name: "only_low", selector: { boolean: {} } },
@@ -201,3 +233,4 @@ customElements.define("battery-overview-card-editor", BatteryOverviewCardEditor)
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "battery-overview-card", name: "Battery Overview Card (FR)", description: "Batteries : tri du plus faible au plus fort, alertes, appareils hors ligne, détection automatique.", preview: true });
 console.info(`%c BATTERY-OVERVIEW-CARD %c v${CARD_VERSION} `, "color:#fff;background:#1a9d55;font-weight:700;border-radius:3px 0 0 3px;padding:2px 4px", "color:#1a9d55;background:#fff;font-weight:700;border-radius:0 3px 3px 0;padding:2px 4px");
+}
